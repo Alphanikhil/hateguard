@@ -25,43 +25,49 @@ class ContentAccessibilityService : AccessibilityService() {
         Log.d(TAG, "Service connected")
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (!preferenceManager.isProtectionEnabled()) {
-            return
-        }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
 
-        // Check if current app is whitelisted
-        val packageName = event.packageName?.toString() ?: return
-        if (preferenceManager.isAppWhitelisted(packageName)) {
-            return
-        }
+        try {
+            if (!preferenceManager.isProtectionEnabled()) {
+                return
+            }
 
-        // Reset list of potentially NSFW images
-        potentialNsfwImagesRects.clear()
+            // Ignore interactions with the app itself
+            val packageName = event.packageName?.toString() ?: return
+            if (packageName == "com.example.nikkuisgoodboy") {
+                Log.d(TAG, "Ignoring events from our own app")
+                return
+            }
 
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                val rootNode = rootInActiveWindow ?: return
-                try {
-                    // Find all image views in the UI hierarchy
-                    findImageViewsRecursively(rootNode)
+            // Check if the app is whitelisted
+            if (preferenceManager.isAppWhitelisted(packageName)) {
+                Log.d(TAG, "App is whitelisted, skipping content filtering")
+                return
+            }
 
-                    // Log the number of potential NSFW images found
-                    Log.d(TAG, "Found ${potentialNsfwImagesRects.size} potential image views")
+            // Reset list of potentially NSFW images
+            potentialNsfwImagesRects.clear()
 
-                    // These coordinates can be used by the overlay service to block content
-                    // Note: This is a simplified approach for demonstration
-                    // In a real implementation, you would need to:
-                    // 1. Capture and analyze the images at these coordinates
-                    // 2. Determine if they contain NSFW content
-                    // 3. Apply appropriate blocking/blurring
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error processing accessibility event", e)
-                } finally {
-                    rootNode.recycle()
+            when (event.eventType) {
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                    val rootNode = rootInActiveWindow ?: return
+                    try {
+                        // Find all image views in the UI hierarchy
+                        findImageViewsRecursively(rootNode)
+
+                        // Log the number of potential NSFW images found
+                        Log.d(TAG, "Found ${potentialNsfwImagesRects.size} potential image views")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing accessibility event", e)
+                    } finally {
+                        rootNode.recycle()
+                    }
                 }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception in onAccessibilityEvent", e)
         }
     }
 
@@ -95,7 +101,6 @@ class ContentAccessibilityService : AccessibilityService() {
         val className = node.className?.toString() ?: ""
         return className.contains("ImageView") ||
                 className.contains("Image") ||
-                // These are common custom view names in social media apps
                 className.contains("PhotoView") ||
                 className.contains("PostImage") ||
                 className.contains("Avatar") ||
